@@ -1,56 +1,67 @@
 import { BigInt } from "@graphprotocol/graph-ts"
 import { Rose, Approval, Transfer } from "../generated/Rose/Rose"
-import { ExampleEntity } from "../generated/schema"
+import { User, Transfers, OwnershipTransferred, Approvals } from "../generated/schema"
+import { Address } from '@graphprotocol/graph-ts'
 
 export function handleApproval(event: Approval): void {
-  // Entities can be loaded from the store using a string ID; this ID
-  // needs to be unique across all entities of the same type
-  let entity = ExampleEntity.load(event.transaction.from)
-
-  // Entities only exist after they have been saved to the store;
-  // `null` checks allow to create entities on demand
-  if (!entity) {
-    entity = new ExampleEntity(event.transaction.from)
-
-    // Entity fields can be set using simple assignments
-    entity.count = BigInt.fromI32(0)
-  }
-
-  // BigInt and BigDecimal math are supported
-  entity.count = entity.count + BigInt.fromI32(1)
-
-  // Entity fields can be set based on event parameters
-  entity.owner = event.params.owner
-  entity.spender = event.params.spender
-
-  // Entities can be written to the store with `.save()`
-  entity.save()
-
-  // Note: If a handler doesn't require existing field values, it is faster
-  // _not_ to load the entity from the store. Instead, create it fresh with
-  // `new Entity(...)`, set the fields that should be updated and save the
-  // entity back to the store. Fields that were not set or unset remain
-  // unchanged, allowing for partial updates to be applied.
-
-  // It is also possible to access smart contracts from mappings. For
-  // example, the contract that has emitted the event can be connected to
-  // with:
-  //
-  // let contract = Contract.bind(event.address)
-  //
-  // The following functions can then be called on this contract to access
-  // state variables and other data:
-  //
-  // - contract.allowance(...)
-  // - contract.approve(...)
-  // - contract.balanceOf(...)
-  // - contract.decimals(...)
-  // - contract.name(...)
-  // - contract.owner(...)
-  // - contract.symbol(...)
-  // - contract.totalSupply(...)
-  // - contract.transfer(...)
-  // - contract.transferFrom(...)
+  // Create a new Approval entity to record this event
+  let approval = new Approvals(
+    event.transaction.hash
+      .toHexString() 
+      .concat("-")
+      .concat(event.logIndex.toString())
+  );
+  approval.owner = event.params.owner.toHexString();
+  approval.spender = event.params.spender.toHexString();
+  approval.value = event.params.value;
+  approval.timestamp = event.block.timestamp;
+  approval.block = event.block.number;
+  approval.save();
 }
 
-export function handleTransfer(event: Transfer): void {}
+export function handleTransfer(event: Transfer): void {
+
+  let contract = Rose.bind(Address.fromString("0x..."))
+
+  let user = User.load(event.params.from.toHex());
+  if (user == null) {
+    user = new User(event.params.from.toHex());
+    user.balance = BigInt.fromI32(0);
+    let balanceResult = contract.try_balanceOf(Address.fromString(event.params.from.toHexString()))
+    // user.token = event.address.toString();
+  }
+
+  // Save updated user balances
+  user.save()
+  
+  // Create transfer entity
+  let transfer = new Transfers(
+    event.transaction.hash
+      .toHexString()
+      .concat("-")
+      .concat(event.logIndex.toString())
+  )
+  
+  let fromUser = User.load(event.params.from.toHexString())
+  if (!fromUser) {
+    fromUser = new User(event.params.from.toHexString())
+    fromUser.owner = event.params.from.toHexString();
+    fromUser.balance = BigInt.fromI32(0)
+    fromUser.save()
+  }
+
+  let toUser = User.load(event.params.to.toHexString())
+  if (!toUser) {
+    toUser = new User(event.params.to.toHexString())
+    toUser.owner = event.params.to.toHexString();
+    toUser.balance = BigInt.fromI32(0)
+    toUser.save()
+  }
+
+  transfer.from = fromUser.id
+  transfer.to = toUser.id
+  transfer.value = event.params.value
+  transfer.timestamp = event.block.timestamp
+  
+  transfer.save()
+}
