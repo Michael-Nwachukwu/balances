@@ -4,7 +4,6 @@ import { User, Transfers, OwnershipTransferred, Approvals } from "../generated/s
 import { Address } from '@graphprotocol/graph-ts'
 
 export function handleApproval(event: Approval): void {
-  // Create a new Approval entity to record this event
   let approval = new Approvals(
     event.transaction.hash
       .toHexString() 
@@ -20,19 +19,31 @@ export function handleApproval(event: Approval): void {
 }
 
 export function handleTransfer(event: Transfer): void {
+  let contract = Rose.bind(Address.fromString("0xfBF2a9f8ffab5a8ED186151d9CFa360911Abd6Fd"))
 
-  let contract = Rose.bind(Address.fromString("0x..."))
-
-  let user = User.load(event.params.from.toHex());
-  if (user == null) {
-    user = new User(event.params.from.toHex());
-    user.balance = BigInt.fromI32(0);
-    let balanceResult = contract.try_balanceOf(Address.fromString(event.params.from.toHexString()))
-    // user.token = event.address.toString();
+  let fromUser = User.load(event.params.from.toHex());
+  if (!fromUser) {
+    fromUser = new User(event.params.from.toHex());
+    fromUser.owner = event.params.from.toHexString();
+    fromUser.balance = BigInt.fromI32(0);
+    let balanceResult = contract.try_balanceOf(event.params.from)
+    if (!balanceResult.reverted) {
+      fromUser.balance = balanceResult.value;
+    }
   }
-
-  // Save updated user balances
-  user.save()
+  fromUser.save()
+  
+  let toUser = User.load(event.params.to.toHex());
+  if (!toUser) {
+    toUser = new User(event.params.to.toHex());
+    toUser.owner = event.params.to.toHexString();
+    toUser.balance = BigInt.fromI32(0);
+    let balanceResult = contract.try_balanceOf(event.params.to)
+    if (!balanceResult.reverted) {
+      toUser.balance = balanceResult.value;
+    }
+  }
+  toUser.save()
   
   // Create transfer entity
   let transfer = new Transfers(
@@ -42,22 +53,6 @@ export function handleTransfer(event: Transfer): void {
       .concat(event.logIndex.toString())
   )
   
-  let fromUser = User.load(event.params.from.toHexString())
-  if (!fromUser) {
-    fromUser = new User(event.params.from.toHexString())
-    fromUser.owner = event.params.from.toHexString();
-    fromUser.balance = BigInt.fromI32(0)
-    fromUser.save()
-  }
-
-  let toUser = User.load(event.params.to.toHexString())
-  if (!toUser) {
-    toUser = new User(event.params.to.toHexString())
-    toUser.owner = event.params.to.toHexString();
-    toUser.balance = BigInt.fromI32(0)
-    toUser.save()
-  }
-
   transfer.from = fromUser.id
   transfer.to = toUser.id
   transfer.value = event.params.value
